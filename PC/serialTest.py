@@ -30,11 +30,10 @@ while(1):
         # time.sleep(1.0 / 1000.0);
         # ser.write(b'\xFF');
         # time.sleep(1.0 / 1000.0);
-        # ser.write(/b'\xA9');
+        ser.write(b'\xA9');
         time.sleep(1.0 / 1000.0);
 
         # time.sleep(1000.0 / 1000.0);
-    # ser.write(b't')     # write a string
 
     temp = ser.read(16)
     if(temp != b''):

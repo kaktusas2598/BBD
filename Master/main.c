@@ -33,8 +33,13 @@ typedef enum {
     STATE_FRAME_START,
     STATE_FRAME_STOP,
     STATE_MASTER_FRAME,
-    STATE_SLAVE_FRAME
+    STATE_SLAVE_FRAME,
+    STATE_SLAVE_SEND,
+    STATE_SLAVE_RECEIVE,
+    s
 }FRAME_STATE;
+
+FRAME_STATE state = STATE_START;
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -54,7 +59,7 @@ int main (void){
     LED_PORT &= ~(1 << LED1) | (1 << LED2);
 
     //Set RS485 drivers Mode
-    //RS485 Drivers Tx/Rx control piasn to output
+    //RS485 Drivers Tx/Rx control pin to output
     RS485_DDR |= (1 << RS485_CTRL1) | (1 << RS485_CTRL2);
     //uart0 to receive, uart1 to transmit
     RS485_PORT &= ~(1 << RS485_CTRL1);
@@ -79,153 +84,134 @@ int main (void){
     uint8_t dataLen;
     uint8_t * data;
     unsigned int tempDataByte;
-    FRAME_STATE state = STATE_START;
 
+    //Main Loop with Finite State Machine for handling protocol frames
     while(1){
-        //Main Loop:
-        //Get data from USART0 (PC)
-        //Make Finite State Machine(FSM)
-        //Parse messages
-        //Do actions:
-        //control power
-        //control slaves
-        //
-        //get byte from receive buffer
-        cmd = uart0_getc();
+        switch(state){
+            case STATE_START:
+                //Wait for start byte of protocol frame
+                do{cmd = uart0_getc();}while(cmd != START_BYTE);
+                state = STATE_FRAME_START;
+                break;
+            case STATE_FRAME_START:
+                //Get adress byte
+                do{cmd = uart0_getc();}while(cmd & UART_NO_DATA);
+                //Message for master from PC
+                if(cmd == SLAVE_ADDRESS){
+                    state = STATE_MASTER_FRAME;
+                //Or message for slaves
+                }else{
+                    state = STATE_SLAVE_FRAME;
+                }
+                dataAddress = cmd;
+                break;
+            case STATE_MASTER_FRAME:
+                //Get bytes from UART0 until STOP_BYTE
+                ////TODO TODOTODOTODO dadada da dada
+                while(cmd != STOP_BYTE){
+                }
+                break;
+            case STATE_SLAVE_FRAME:
+                //Get bytes from UART0 until STOP_BYTE
+                //get datalen byte
+                do{cmd = uart0_getc();}while(cmd & UART_NO_DATA);
+                dataLen = cmd;
 
-        /*//Echo back test
-        RS485_PORT |= (1 << RS485_CTRL1);
-        uart0_putc((unsigned char)cmd);
-        _delay_ms(1);//Neveikia be sito delay
-        RS485_PORT &= ~(1 << RS485_CTRL1);*/
-
-        
-        //Do actions if there is data in uart0 rx buffer
-        if (!( cmd & UART_NO_DATA )){
-            switch(state){
-                case STATE_START:
-                    //Start of protocol frame
-                    if(cmd == START_BYTE){
-                        state = STATE_FRAME_START;
+                //allocate data buffer
+                //malloc over 500bytes...
+                data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..
+                //get data bytes
+                uint8_t i = 0;
+                do{
+                    //Get each data byte
+                    tempDataByte = uart0_getc();
+                    if(!(tempDataByte & UART_NO_DATA) && i != dataLen){
+                        data[i] = tempDataByte;
+                        i++;
                     }
-                    break;
-                case STATE_FRAME_START:
-                    //Message for master from PC
-                    if(cmd == SLAVE_ADDRESS){
-                        state = STATE_MASTER_FRAME;
-                    }else{
-                        state = STATE_SLAVE_FRAME;
+
+                }while(i < dataLen);
+
+                //get stop byte
+                do{cmd = uart0_getc();}while(cmd != STOP_BYTE);
+                //TODO: later add XOR checksum message validation
+
+                state = STATE_SLAVE_SEND;
+                break;
+            case STATE_SLAVE_SEND:
+                //We have all data, now send this message to slaves
+                //Send Response
+                /*UCSR1B |= (1 << TXCIE1);*/
+                RS485_PORT |= (1 << RS485_CTRL2);
+                uart1_putc(START_BYTE);//temp - temp slave must light led after receiving this
+                uart1_putc(dataAddress);
+                //TODO: improve slave to accept this data
+                /*uart1_putc(dataLen);
+                for(i = 0; i < dataLen; i++){
+                    uart1_putc(data[i]);
+                }
+                uart1_putc(STOP_BYTE);*/
+                //TODO: improve
+                while(!(UCSR1A & (1 << TXC1)));
+                /*_delay_ms(10);//This is shit*/
+                //Enable USART1 RX
+                RS485_PORT &= ~(1 << RS485_CTRL2);
+
+                state = STATE_SLAVE_RECEIVE;
+                break;
+            case STATE_SLAVE_RECEIVE:
+
+                RS485_PORT |= (1 << RS485_CTRL1);
+                //Get slave message
+                //BUG: stuck on this loop
+                //CHECK BREADBOARD CONNECTIONS
+                i = 0;
+                do{
+                    //Get each data byte
+                    tempDataByte = uart1_getc();
+                    if(!(tempDataByte & UART_NO_DATA) && i != 10){
+                        /*data[i] = tempDataByte;*/
+                        uart0_putc(tempDataByte);
+                        LED_PORT |= (1 << LED1);
+                        i++;
                     }
-                    dataAddress = cmd;
-                    break;
-                case STATE_MASTER_FRAME:
-                    //Get bytes from UART0 until STOP_BYTE
-                    while(cmd != STOP_BYTE){
-                    }
-                    break;
-                case STATE_SLAVE_FRAME:
-                    //Get bytes from UART0 until STOP_BYTE
-                    /*while(cmd != STOP_BYTE){*/
-                        //get datalen byte
-                        dataLen = cmd;
 
-                        //allocate data buffer
-                        //malloc over 500bytes...
-                        data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..
-                        //get data bytes
-                        uint8_t i = 0;
-                        do{
-                            //Get each data byte
-                            tempDataByte = uart0_getc();
-                            if(!(tempDataByte & UART_NO_DATA) && i != dataLen){
-                                data[i] = tempDataByte;
-                                i++;
-                            }
+                }while(i < 10);
 
-                        }while(i < dataLen);
-
-                        //Enable uart0 tx
-                        /*RS485_PORT |= (1 << RS485_CTRL1);
-                        //Send Response
-                        uart0_putc(START_BYTE);
-                        uart0_putc(dataAddress);
-                        uart0_putc(dataLen);//temp
-                        for(i = 0; i < dataLen; i++){
-                            uart0_putc(data[i]);
-                        }
-                        uart0_putc(STOP_BYTE);*/
-                        /*UCSR0B |= (1 << TXCIE0);*/
+                RS485_PORT |= (1 << RS485_CTRL1);
+                for(i = 0; i < 8; i++){
+                    uart0_putc(data[i]);
+                }
 
 
-                        //We have all data, now send this message to slaves
-                        //Send Response
-						/*UCSR1B |= (1 << TXCIE1);*/
-                        RS485_PORT |= (1 << RS485_CTRL2);
-                        uart1_putc(START_BYTE);
-                        uart1_putc(0x14);
-						while(!(UCSR1A & (1 << TXC1)));
-                        /*uart1_putc(dataLen);//temp
-                        for(i = 0; i < dataLen; i++){
-                            uart1_putc(data[i]);
-                        }
-                        uart1_putc(STOP_BYTE);*/
-                        /*_delay_ms(10);//This is shit*/
-                        //Enable USART1 RX
-                        RS485_PORT &= ~(1 << RS485_CTRL2);
+                /*//Enable uart0 tx
+                RS485_PORT |= (1 << RS485_CTRL1);
+                //Send Response
+                uart0_putc(START_BYTE);
+                uart0_putc(dataAddress);
+                uart0_putc(dataLen);//temp
+                for(i = 0; i < dataLen; i++){
+                    uart0_putc(data[i]);
+                }
+                uart0_putc(STOP_BYTE);*/
+                _delay_ms(10);//This is shit
+                //Reenable RX
+                RS485_PORT &= ~(1 << RS485_CTRL1);
+                state = STATE_START;
 
-                        RS485_PORT |= (1 << RS485_CTRL1);
-                        //Get slave message
-                        //BUG: stuck on this loop
-                        i = 0;
-                        do{
-                            //Get each data byte
-                            tempDataByte = uart1_getc();
-                            if(!(tempDataByte & UART_NO_DATA) && i != 10){
-                                /*data[i] = tempDataByte;*/
-                                uart0_putc(tempDataByte);
-                                /*LED_PORT |= (1 << LED1);*/
-                                i++;
-                            }
-
-                        }while(i < 10);
-
-                        LED_PORT |= (1 << LED2);
-                        RS485_PORT |= (1 << RS485_CTRL1);
-                        for(i = 0; i < 8; i++){
-                            uart0_putc(data[i]);
-                        }
-
-
-                        /*//Enable uart0 tx
-                        RS485_PORT |= (1 << RS485_CTRL1);
-                        //Send Response
-                        uart0_putc(START_BYTE);
-                        uart0_putc(dataAddress);
-                        uart0_putc(dataLen);//temp
-                        for(i = 0; i < dataLen; i++){
-                            uart0_putc(data[i]);
-                        }
-                        uart0_putc(STOP_BYTE);*/
-                        _delay_ms(10);//This is shit
-                        //Reenable RX
-                        RS485_PORT &= ~(1 << RS485_CTRL1);
-                        state = STATE_START;
-
-                    /*}*/
-                    break;
-                //Unneccessary???
-                /*case STATE_FRAME_STOP:
-                    state = STATE_START;
-                    break;*/
-                default:
-                    /**/
-                    break;
-            }
-
+                break;
+            //Unneccessary???
+            /*case STATE_FRAME_STOP:
+                state = STATE_START;
+                break;*/
+            default:
+                /**/
+                break;
         }
+
     }
 }
-
+/*
 //Slave transmit complete
 ISR(USART1_TX_vect){
     LED_PORT ^= (1 << LED1);
@@ -233,4 +219,4 @@ ISR(USART1_TX_vect){
 //Master transmit complete
 ISR(USART0_TX_vect){
     LED_PORT |= (1 << LED2);
-}
+}*/
