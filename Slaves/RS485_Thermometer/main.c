@@ -10,7 +10,9 @@
 
 typedef enum {
     STATE_START,
-    STATE_FRAME_START
+    STATE_FRAME_START,
+    STATE_FRAME_DATA,
+    STATE_FRAME_REPLY
 }FRAME_STATE;
 
 #include <avr/io.h>
@@ -44,62 +46,94 @@ int main (void){
 
     //ony byte from RX buffer
     unsigned int cmd; //was unsigned int
-    unsigned char *response;
+    /*unsigned char *response;*/
+    uint8_t dataAddress;
+    uint8_t dataLen;
+    uint8_t * data;
+
     FRAME_STATE state = STATE_START;
 
     while(1){
-        ds18b20_gettemp(&lastWholeTemp, &lastDecimalTemp);
+        //Only get temp if message have not yet arrived
+        if(state == STATE_START)
+            ds18b20_gettemp(&lastWholeTemp, &lastDecimalTemp);
 
-        //get byte from receive buffer
-        cmd = uart_getc();
-
-        if (!( cmd & UART_NO_DATA )){
-            //toggle led on data receive
-            /*PORTB ^= (1 << STATUS_LED);
-            //enable TX, disable RX
-            PORTB |= (1 << RS485_RXTX_EN);
-            //echo back test
-            uart_putc((unsigned char)cmd);
-            _delay_ms(1);//Neveikia be sito delay
-
-            //Reenable RX
-            PORTB &= ~(1 << RS485_RXTX_EN);*/
-            //Start of frame
-            switch(state){
-                case STATE_START:
-                    if(cmd == START_BYTE){
-                        PORTB |= (1 << STATUS_LED);
-                        state = STATE_FRAME_START;
-                    }
-                    break;
-                case STATE_FRAME_START:
-                    if(cmd == SLAVE_ADDRESS){
-
-                        //Send Response
-                        PORTB |= (1 << STATUS_LED);
-                        PORTB |= (1 << RS485_RXTX_EN);
-                        uart_putc(START_BYTE);
-                        uart_putc(SLAVE_ADDRESS);
-                        //Send temp in 8 bytes
-                        //TODO: add data len byte
-                        uart_putc(lastWholeTemp/100+'0');
-                        uart_putc(lastWholeTemp/10+'0');
-                        uart_putc(lastWholeTemp%10+'0');
-                        uart_putc('.');
-                        uart_putc(lastDecimalTemp/1000 + '0');
-                        uart_putc((lastDecimalTemp/100)%10 + '0');
-                        uart_putc((lastDecimalTemp/10)%10+ '0');
-                        uart_putc(lastDecimalTemp%10 + '0');
-                        _delay_ms(10);//This is shit
-                        //Reenable RX
-                        PORTB &= ~(1 << RS485_RXTX_EN);
-
-                    }
+        switch(state){
+            //Start of frame, wait for start byte
+            case STATE_START:
+                do{cmd = uart_getc();}while(cmd != START_BYTE);
+                //Led on mark start of message
+                PORTB |= (1 << STATUS_LED);
+                state = STATE_FRAME_START;
+                break;
+            //Get slave address
+            case STATE_FRAME_START:
+                do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
+                if(cmd == SLAVE_ADDRESS){
+                    dataAddress = cmd;
+                    state = STATE_FRAME_DATA;
+                }else{
+                    //Message not for this slave
                     state = STATE_START;
-                    break;
+                }
+                break;
+            //Get rest of frame
+            case STATE_FRAME_DATA:
+                //Get bytes from UART until STOP_BYTE
+                //get datalen byte
+                do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
+                dataLen = cmd;
 
-            }
+                //allocate data buffer
+                //malloc over 500bytes...
+                data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..
+                //get data bytes
+                uint8_t i = 0;
+                do{
+                    //Get each data byte
+                    cmd = uart_getc();
+                    if((!(cmd & UART_NO_DATA)) && i != dataLen){
+                        data[i] = cmd;
+                        i++;
+                    }
+                }while(i < dataLen);
 
+                //get stop byte
+                if(cmd != STOP_BYTE){
+                    do{cmd = uart_getc();}while(cmd != STOP_BYTE);
+                }
+                //TODO: later add XOR checksum message validation
+
+                state = STATE_FRAME_REPLY;
+
+                break;
+            case STATE_FRAME_REPLY:
+
+                //Send Response
+                PORTB |= (1 << RS485_RXTX_EN);
+                uart_putc(START_BYTE);
+                uart_putc(SLAVE_ADDRESS);
+                uart_putc(0x08);//Send temp in 8 bytes
+                uart_putc(lastWholeTemp/100+'0');
+                uart_putc(lastWholeTemp/10+'0');
+                uart_putc(lastWholeTemp%10+'0');
+                uart_putc('.');
+                uart_putc(lastDecimalTemp/1000 + '0');
+                uart_putc((lastDecimalTemp/100)%10 + '0');
+                uart_putc((lastDecimalTemp/10)%10+ '0');
+                uart_putc(lastDecimalTemp%10 + '0');
+                uart_putc(STOP_BYTE);
+
+                /*while(!(UCSRA & (1 << TXC))); why u no work????*/
+                _delay_ms(20);//This is shit
+                //Reenable RX
+                PORTB &= ~(1 << RS485_RXTX_EN);
+
+                PORTB &= ~(1 << STATUS_LED);
+                state = STATE_START;
+                break;
+            default:
+                break;
         }
     }
 }
