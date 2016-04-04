@@ -8,14 +8,13 @@ print('Opened '+ser.name)         # check which port was really used
 
 while(1):
     #Test protocol request for temp sensor
-    print('Press t/T to trigger protocol request for Slave with address 0x14 to get temperature:\n');
+    print('Select action:\n1. Get Temperature\n2. Switch Relay 1\n');
     cmd = input();
-    if(cmd == 't' or cmd == 'T'):
+    if(cmd == '1'):
         #START BYTE
         ser.write(b'\x96');
         time.sleep(1.0 / 1000.0);
         #ADDRESS BYTE
-        # ser.write(b'\xFF');
         ser.write(b'\x14');
         time.sleep(1.0 / 1000.0);
         #TODO: add CMD BYTE??
@@ -26,15 +25,22 @@ while(1):
         #TODO: slave specific data
         ser.write(b'\x00');
         time.sleep(1.0 / 1000.0);
-        # ser.write(b'\xFF');
-        # time.sleep(1.0 / 1000.0);
-        # ser.write(b'\xFF');
-        # time.sleep(1.0 / 1000.0);
+        ser.write(b'\xA9');
+        time.sleep(1.0 / 1000.0);
+    elif(cmd == '2'):
+        ser.write(b'\x96');
+        time.sleep(1.0 / 1000.0);
+        ser.write(b'\xFF');
+        time.sleep(1.0 / 1000.0);
+        ser.write(b'\x01');
+        time.sleep(1.0 / 1000.0);
+        ser.write(b'\x01');
+        time.sleep(1.0 / 1000.0);
         ser.write(b'\xA9');
         time.sleep(1.0 / 1000.0);
 
-        # time.sleep(1000.0 / 1000.0);
 
+    # time.sleep(1000.0 / 1000.0);
     temp = ser.read(16)
     if(temp != b''):
         print(temp)
