@@ -46,7 +46,6 @@ FRAME_STATE state = STATE_START;
 
 #include "uart.h"
 
-volatile uint8_t data[16];
 //TODO:
 //Relay control
 //Status Leds
@@ -86,15 +85,12 @@ int main (void){
     uint8_t *response;
     uint8_t dataAddress;
     uint8_t dataLen;
+    uint8_t data[32];//Maximum defined data lenght
     uint8_t i;
     unsigned int tempDataByte;
 
     //Main Loop with Finite State Machine for handling protocol frames
     while(1){
-        /*Work test*/
-        /*LED_PORT ^= (1 << LED1);
-        _delay_ms(100);
-        LED_PORT ^= (1 << LED2);*/
         switch(state){
             case STATE_START:
                 //Wait for start byte of protocol frame
@@ -120,10 +116,6 @@ int main (void){
                 do{cmd = uart0_getc();}while(cmd & UART_NO_DATA);
                 dataLen = cmd;
 
-                //allocate data buffer
-                //malloc over 500bytes...
-                /*data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..*/
-                //get data bytes
                 i = 0;
                 do{
                     //Get each data byte
@@ -146,10 +138,6 @@ int main (void){
                 do{cmd = uart0_getc();}while(cmd & UART_NO_DATA);
                 dataLen = cmd;
 
-                //allocate data buffer
-                //malloc over 500bytes...
-                /*data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..*/
-                //get data bytes
                 i = 0;
                 do{
                     //Get each data byte
@@ -190,8 +178,8 @@ int main (void){
             case STATE_SLAVE_RECEIVE:
                 //BUG: After second frame send, stuck here
                 //Start byte
-				LED_PORT |= (1 << LED2);
-				do{cmd = uart1_getc();}while(cmd != START_BYTE);
+                LED_PORT |= (1 << LED2);
+                do{cmd = uart1_getc();}while(cmd != START_BYTE);
                 //Address
                 do{cmd = uart1_getc();}while(cmd & UART_NO_DATA);
                 //Datalen
@@ -246,12 +234,3 @@ int main (void){
 
     }
 }
-/*
-//Slave transmit complete
-ISR(USART1_TX_vect){
-    LED_PORT ^= (1 << LED1);
-}
-//Master transmit complete
-ISR(USART0_TX_vect){
-    LED_PORT |= (1 << LED2);
-}*/
