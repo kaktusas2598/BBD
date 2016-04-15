@@ -1,5 +1,10 @@
+# For AVR
 *.elf
 *.hex
 *.map
 
+# AVR-GCC object files
 *.o
+
+# Dependency directories for NodeJS
+node_modules
