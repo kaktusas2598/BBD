@@ -1,0 +1,28 @@
+extends layout
+
+block content
+  h1= title
+  p Welcome to #{title}
+  div.input-field
+    select #list-ports
+      each port, i in ports
+        option(value=port.comName) Port: #{port.comName}
+  button#connect(onClick='openSerial()') Connect To Master
+
+  script(type='text/javascript').
+    var socket = io.connect("http://localhost:3000");
+    socket.on("connect", function () {
+      console.log("Connected!");
+    });
+    socket.on('message', readData);
+
+    function openSerial(){
+      console.log('TODO');
+      socket. emit('message','serial chosen');
+    };
+    
+    //console.log(ports);
+    function readData (data) {
+      console.log(data);
+    }
+
