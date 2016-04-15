@@ -1,61 +1,78 @@
-//TODO: bunch of defines
-#define F_CPU 14745600UL
-
-#define LED_DDR DDRB
-#define LED_PORT PORTB
-#define LED1 PB0
-#define LED2 PB1
-
-#define RELAY_DDR DDRC
-#define RELAY_PORT PORTC
-#define RELAY1 PC7
-#define RELAY2 PC6
-
-//RS485 drivers control
-#define RS485_DDR DDRD
-#define RS485_PORT PORTD
-#define RS485_CTRL1 PD5 //uart0(PC)
-#define RS485_CTRL2 PD4 //uart1(slaves)
-
-//Protocol Defines
-#define SLAVE_ADDRESS 0xFF //Master is itself slave to PC
-
-#define START_BYTE 0x96
-#define STOP_BYTE 0xA9
-typedef enum {
-    //add more
-    ASCII
-}DATA_TYPE;
-
-//TODO: add more
-typedef enum {
-    STATE_START,
-    STATE_FRAME_START,
-    STATE_MASTER_FRAME,
-    STATE_SLAVE_FRAME,
-    STATE_SLAVE_SEND,
-    STATE_SLAVE_RECEIVE,
-    STATE_MASTER_COMMAND
-}FRAME_STATE;
-
-FRAME_STATE state = STATE_START;
-
+#include "defines.h"
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
+#include "avr-pcf8563/PCF8563.h"    
+#include "avr-pcf8563/PCF8563.h"    
 #include "uart.h"
 
 //TODO:
-//Relay control
-//Status Leds
 //Both uarts
-//more...
+//i2c ds1307
+
+
+void sendResponse(char * buffer, int len){
+    RS485_PORT |= (1 << RS485_CTRL1);
+    /*_delay_ms(1);*/
+
+    for(uint8_t i = 0; i < len; i++){
+        uart0_putc(buffer[i]);
+        /*_delay_ms(1);*/
+    }
+    /*while(!(UCSR0A & (1 << TXC0)));*/
+    UCSR0B |= (1 << TXCIE0);
+    /*RS485_PORT &= ~(1 << RS485_CTRL1);*/
+
+}
+void sendRequest(char * buffer, int len){
+    RS485_PORT |= (1 << RS485_CTRL2);
+    /*_delay_ms(1);*/
+
+    for(uint8_t i = 0; i < len; i++){
+        uart1_putc(buffer[i]);
+        _delay_ms(1);
+    }
+    UCSR1B |= (1 << TXCIE1);
+    /*while(!(UCSR1A & (1 << TXC1)));*/
+    /*RS485_PORT &= ~(1 << RS485_CTRL2);*/
+
+}
+
+ISR(USART0_TX_vect){
+    UCSR0B &= ~(1 << TXCIE0);
+    RS485_PORT &= ~(1 << RS485_CTRL1);
+}
+ISR(USART1_TX_vect){
+    UCSR1B &= ~(1 << TXCIE1);
+    RS485_PORT &= ~(1 << RS485_CTRL2);
+}
+//PCD8563 alarm
+////TODO: implement queue and sorting by remaining time
+ISR(INT2_vect){
+}
+//Use 1HZ output from rtc chip? 
+ISR(TIMER1_COMPA_vect){
+}
+//Eeprom ready
+//TODO: write and read configs
+ISR(EE_READY_vect){
+}
+//is needed I2C int??
+/*ISR(TWI_vect){
+}*/
+
+
 int main (void){
 
     //Set LED pins to Output
     LED_DDR |= (1 << LED1) | (1 << LED2);
     LED_PORT &= ~(1 << LED1) | (1 << LED2);
+
+    PCF_Init(PCF_ALARM_INTERRUPT_ENABLE);// | PCF_TIMER_INTERRUPT_ENABLE);
+    
+    //Wont yet work, not soldered
+    PCF_SetClockOut(PCF_CLKOUT_1HZ);//RTC clkout to avr one second clock
 
     //Set RELAY pins to output
     RELAY_DDR |= (1 << RELAY1) | (1 << RELAY2);
@@ -76,37 +93,44 @@ int main (void){
     uart0_init(9600);
     uart1_init(9600);
 
+
     //enable global interrupts
     sei();
 
     //ony byte from RX buffer
-    unsigned int cmd; //was unsigned int
+    uint16_t cmd; //was unsigned int
     //Frame variables
-    uint8_t *response;
+    uint8_t response[32];
     uint8_t dataAddress;
     uint8_t dataLen;
     uint8_t data[32];//Maximum defined data lenght
     uint8_t i;
     unsigned int tempDataByte;
 
+    //TEMP for testing auto lights
+    /*state = STATE_SLAVE_SEND;*/
+
     //Main Loop with Finite State Machine for handling protocol frames
     while(1){
         switch(state){
-            case STATE_START:
+            case STATE_IDLE:
                 //Wait for start byte of protocol frame
-                do{cmd = uart0_getc();}while(cmd != START_BYTE);
-                state = STATE_FRAME_START;
+                cmd = uart0_getc();
+                if(cmd == START_BYTE){
+                    state = STATE_FETCH_ADDRESS;
+                }
                 break;
-            case STATE_FRAME_START:
+            case STATE_FETCH_ADDRESS:
                 //Get adress byte
                 do{cmd = uart0_getc();}while(cmd & UART_NO_DATA);
                 //Message for master from PC
                 if(cmd == SLAVE_ADDRESS){
                     state = STATE_MASTER_FRAME;
+                    LED_PORT |= (1 << LED1);
                 //Or message for slaves
                 }else{
-                    LED_PORT |= (1 << LED1);
                     state = STATE_SLAVE_FRAME;
+
                 }
                 dataAddress = cmd;
                 break;
@@ -128,7 +152,11 @@ int main (void){
                 }while(i < dataLen);
 
                 //get stop byte
-                do{cmd = uart0_getc();}while(cmd != STOP_BYTE);
+                /*do{cmd = uart0_getc();}while(cmd != STOP_BYTE);*/
+                if(cmd != STOP_BYTE){
+                    do{cmd = uart0_getc();}while(cmd != STOP_BYTE);
+                }
+
 
                 state = STATE_MASTER_COMMAND;
                 break;
@@ -155,22 +183,25 @@ int main (void){
 
                 state = STATE_SLAVE_SEND;
                 break;
-            //Send message to slave
+            //Send Request to slave
             case STATE_SLAVE_SEND:
-                RS485_PORT |= (1 << RS485_CTRL2);
-                //Second time does not sende this data to slave
-                uart1_putc(START_BYTE);//temp slave must light led after receiving this
-                uart1_putc(dataAddress);
-                uart1_putc(dataLen);
-                for(i = 0; i < dataLen; i++){
-                    uart1_putc(data[i]);
-                }
-                uart1_putc(STOP_BYTE);
-                //TODO: improve
-                while(!(UCSR1A & (1 << TXC1)));
-                /*_delay_ms(20);//This is shit*/
-                //Enable USART1 RX
-                RS485_PORT &= ~(1 << RS485_CTRL2);
+
+                //TEST: send message to LDR;
+                /*response[0] = START_BYTE;
+                response[1] = 0x15;
+                response[2] = 0x01;
+                response[3] = 0x00;
+                response[4] = STOP_BYTE;
+
+                sendRequest(response, 5);*/
+                response[0] = START_BYTE;
+                response[1] = dataAddress;
+                response[2] = dataLen;
+                for(i = 0;i < dataLen; i++)
+                    response[3 + i] = data[i];
+                response[3+i] = STOP_BYTE;
+
+                sendRequest(response, (4+dataLen));
 
                 state = STATE_SLAVE_RECEIVE;
                 break;
@@ -200,32 +231,48 @@ int main (void){
                 //stop byte
                 do{cmd = uart1_getc();}while(cmd != STOP_BYTE);
 
+                state = STATE_SEND_RESPONSE;
+                break;
+            //Send Response back to PC
+            case STATE_SEND_RESPONSE:
 
-                //Enable uart0 tx
-                RS485_PORT |= (1 << RS485_CTRL1);
-                //Send Response
-                uart0_putc(START_BYTE);
-                uart0_putc(dataAddress);
-                uart0_putc(dataLen);
-                for(i = 0; i < dataLen; i++){
-                    uart0_putc(data[i]);
-                }
-                uart0_putc(STOP_BYTE);
-                while(!(UCSR0A & (1 << TXC0)));
-                /*_delay_ms(10);//This is shit*/
-                //Reenable RX
-                RS485_PORT &= ~(1 << RS485_CTRL1);
-                state = STATE_START;
+                response[0] = START_BYTE;
+                response[1] = dataAddress;
+                response[2] = dataLen;
+                for(i = 0;i < dataLen; i++)
+                    response[3 + i] = data[i];
+                response[3+i] = STOP_BYTE;
 
-                LED_PORT &= ~(1 << LED1);
+                sendResponse(response, (4+dataLen));
+
+                state = STATE_IDLE;
+
+                //TODO: get LDR value, compare switch lights relay
+                //TEMP
+                /*state = STATE_SLAVE_SEND;*/
+
                 break;
             case STATE_MASTER_COMMAND:
+
+                /*
+                 *PCF_DateTime dateTime;
+                 dateTime.second = 43;
+                 dateTime.minute = 59;
+                 dateTime.day = 15;
+                 dateTime.weekday = 6;
+                 dateTime.month = 8;
+                 dateTime.year = 2015;
+
+                 PCF_SetDateTime(&dateTime);
+                 * */
+
 
                 //TODO: implement master protocol logic
                 //TEST: switch relay on
                 RELAY_PORT ^= (1 << RELAY1) | (1 << RELAY2);
+                LED_PORT &= ~(1 << LED1);
 
-                state = STATE_START;
+                state = STATE_IDLE;
                 break;
             default:
                 /**/

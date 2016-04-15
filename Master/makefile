@@ -60,7 +60,7 @@ TARGET = $(lastword $(subst /, ,$(CURDIR)))
 # Object files: will find all .c/.h files in current directory
 #  and in LIBDIR.  If you have any other (sub-)directories with code,
 #  you can add them in to SOURCES below in the wildcard statement.
-SOURCES=$(wildcard *.c $(LIBDIR)/*.c)
+SOURCES=$(wildcard *.c $(LIBDIR)/*.c avr-pcf8563/*.c)
 OBJECTS=$(SOURCES:.c=.o)
 HEADERS=$(SOURCES:.c=.h)
 

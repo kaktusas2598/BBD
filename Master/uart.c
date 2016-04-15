@@ -51,19 +51,11 @@
 static volatile uint8_t UART_TxBuf[UART_TX0_BUFFER_SIZE];
 static volatile uint8_t UART_RxBuf[UART_RX0_BUFFER_SIZE];
 
-#if defined( USART0_LARGE_BUFFER )
-	static volatile uint16_t UART_TxHead;
-	static volatile uint16_t UART_TxTail;
-	static volatile uint16_t UART_RxHead;
-	static volatile uint16_t UART_RxTail;
-	static volatile uint8_t UART_LastRxError;
-#else
-	static volatile uint8_t UART_TxHead;
-	static volatile uint8_t UART_TxTail;
-	static volatile uint8_t UART_RxHead;
-	static volatile uint8_t UART_RxTail;
-	static volatile uint8_t UART_LastRxError;
-#endif
+static volatile uint8_t UART_TxHead;
+static volatile uint8_t UART_TxTail;
+static volatile uint8_t UART_RxHead;
+static volatile uint8_t UART_RxTail;
+static volatile uint8_t UART_LastRxError;
 
 
 static volatile uint8_t UART1_TxBuf[UART_TX1_BUFFER_SIZE];
@@ -393,7 +385,8 @@ void uart1_init(uint16_t baudrate)
 #ifdef URSEL1
 	UCSR1C = (1<<URSEL1)|(3<<UCSZ10);
 #else
-	UCSR1C = (3<<UCSZ10);
+	UCSR1C = (1<<UCSZ10) | (1 << UCSZ11);//TEST
+	/*UCSR1C = (3<<UCSZ10);*/
 #endif
 } /* uart_init */
 
