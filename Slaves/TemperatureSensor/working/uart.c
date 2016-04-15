@@ -2,7 +2,6 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include "uart.h"
-#include "defines.h"
 
 /*
  *  constants and macros
@@ -19,7 +18,7 @@
 	#error TX buffer size is not a power of 2
 #endif
 
-#define UART_RECEIVE_INTERRUPT   USART_RXC_vect 
+#define UART_RECEIVE_INTERRUPT   USART_RX_vect 
 #define UART_TRANSMIT_INTERRUPT  USART_UDRE_vect
 #define UART_STATUS   UCSRA
 #define UART_CONTROL  UCSRB
@@ -106,13 +105,6 @@ Returns:  none
 void uart_init()
 /*void uart_init(uint16_t baudrate)*/
 {
-	//RS485 Driver Tx/Rx control pin to output and enable RX
-    RS485_DDR |= (1 << RS485_CTRL);
-    RS485_PORT &= ~(1 << RS485_CTRL);
-
-    //enable internal UART RX pull-up
-    PORTD |= (1 << PD0);
-
 	UART_TxHead = 0;
 	UART_TxTail = 0;
 	UART_RxHead = 0;
@@ -130,11 +122,7 @@ void uart_init()
 	//TODO: dont forget about RS485 tx switching!
 
 	/* Set frame format: asynchronous, 8data, no parity, 1stop bit */
-#ifdef ATMEGA8
-	UCSRC = (1 << URSEL) |(3<<UCSZ0);
-#else
 	UCSRC = (3<<UCSZ0);
-#endif
 
 } /* uart0_init */
 

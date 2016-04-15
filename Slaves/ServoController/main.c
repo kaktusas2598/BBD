@@ -1,151 +1,103 @@
-/*#define F_CPU 14745600UL*/
+ /*------- Preamble -------- //*/
+ #include <avr/io.h>
+ #include <util/delay.h>
+ #include <avr/interrupt.h>
+ /*#include "pinDefines.h"*/
+ /*#include "uart.h"*/
 
-#define RS485_RXTX_EN PB1
-//Status LED's
-#define LED_DDR DDRB
-#define LED_PORT PORTB
-#define LED1 PB0
-#define LED2 PB1
+ /* experiment with these values */
+ /* to match your own servo */
+ #define PULSE_MIN 1000
+ /*#define PULSE_MIN 97*/
+ #define PULSE_MAX 2000
+ /*#define PULSE_MAX 535*/
+ #define PULSE_MID 1500
+ /*#define PULSE_MID 315*/
 
 
-#define SLAVE_ADDRESS 0x16
+ /*static inline uint16_t getNumber16(void);*/
+ static inline void initTimer1Servo(void) {
+	// Set up Timer1 (16bit) to give a pulse every 20ms
+	// Use Fast PWM mode, counter max in ICR1
+	TCCR1A |= (1 << WGM11) | (1<<COM1B1); //Fast PWM modea all WGm bits set
+	TCCR1B |= (1 << WGM12) | (1 << WGM13);
+	TCCR1A |= (1 << CS10) |  (1<<CS11); //1 prescaling -- counting in microseconds
+	/*ICR1 = 4607;*/
+	ICR1 = 20000;
+	// TOP value = 20ms, 50Hz
+	TCCR1A |= (1 << COM1A1);
+	// Direct output on PB1 / OC1A
+	DDRB |= (1 << PB3);
+	// set pin for output
+ }
+ static inline void showOff(void) {
+	/*printString("Center\r\n");*/
+	OCR1A = PULSE_MIN;
+	_delay_ms(1500);
 
-#define START_BYTE 0x96
-#define STOP_BYTE 0xA9
+	OCR1A = PULSE_MIN;
+	_delay_ms(1500);
 
-typedef enum {
-    STATE_START,
-    STATE_FRAME_START,
-    STATE_FRAME_DATA,
-    STATE_FRAME_REPLY
-}FRAME_STATE;
+	OCR1A = PULSE_MAX;
+	_delay_ms(1500);
 
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <util/delay.h>
-
-/*#include "uart.h"*/
-
-int main (void){
-
-	DDRB |= (1 << DDB0) | (1 << DDB4);
-	PORTB &= ~(1 << PB0);
-	PORTB &= ~(1 << PB4);
-    //Status Led set and turn off
-    /*DDRB |= (1 << DDB2);
-    PORTB &= ~(1 << STATUS_LED);
-
-    //RS485 Driver Tx/Rx control pin to output and enable RX
-    DDRB |= (1 << DDB1);
-    PORTB &= ~(1 << RS485_RXTX_EN);
-
-    //enable internal UART RX pull-up
-    PORTD |= (1 << PD0);
-
-    //initialize uart
-    uart_init();
-
-    //enable global interrupts
-    sei();
-
-    //ony byte from RX buffer
-    unsigned int cmd; //was unsigned int
-    uint8_t dataAddress;
-    uint8_t dataLen;
-    uint8_t * data;
-
-    FRAME_STATE state = STATE_START;
-*/
-    while(1){
-		PORTB ^= (1 << PB0);
-		_delay_ms(500);
-        for (int i = 0; i < 8; i++){
-        	PORTB |= (1 << PB4);
-        	_delay_ms(2);
-        	PORTB &= ~(1 << PB4);
-        	_delay_ms(20);
-        	_delay_ms(100);
+	OCR1A = PULSE_MID;
+	_delay_ms(1500);
+ }
+ int main(void) {
+	// -------- Inits --------- //
+	uint16_t servoPulseLength;
+	DDRD |= (1 << PD6);
+	OCR1A = PULSE_MID;
+	/* set it to middle position initially */
+	initTimer1Servo();
+	/*initUSART();*/
+	/*printString("\r\nWelcome to the Servo Demo\r\n");*/
+	/*220*/
+	/*Make: AVR ProgrammingServos*/
+	showOff();
+	PORTD |= (1 << PD6);
+	// ------ Event loop ------ //
+	servoPulseLength = 1000;
+	while (1) {
+		/*printString("\r\nEnter a four-digit pulse length:\r\n");*/
+		/*servoPulseLength = getNumber16();*/
+		/*printString("On my way....\r\n");*/
+		OCR1A = servoPulseLength;
+		/* re-enable output pin */
+		_delay_ms(1000);
+		/*printString("Releasing...\r\n");*/
+		while (TCNT1 < 3000) {;
 		}
-        /*//Only get temp if message have not yet arrived
-        if(state == STATE_START)
-            ds18b20_gettemp(&lastWholeTemp, &lastDecimalTemp);
-
-        switch(state){
-            //Start of frame, wait for start byte
-            case STATE_START:
-                do{cmd = uart_getc();}while(cmd != START_BYTE);
-                //Led on mark start of message
-                PORTB |= (1 << STATUS_LED);
-                state = STATE_FRAME_START;
-                break;
-            //Get slave address
-            case STATE_FRAME_START:
-                do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
-                if(cmd == SLAVE_ADDRESS){
-                    dataAddress = cmd;
-                    state = STATE_FRAME_DATA;
-                }else{
-                    //Message not for this slave
-                    state = STATE_START;
-                }
-                break;
-            //Get rest of frame
-            case STATE_FRAME_DATA:
-                //Get bytes from UART until STOP_BYTE
-                //get datalen byte
-                do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
-                dataLen = cmd;
-
-                //allocate data buffer
-                //malloc over 500bytes...
-                data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..
-                //get data bytes
-                uint8_t i = 0;
-                do{
-                    //Get each data byte
-                    cmd = uart_getc();
-                    if((!(cmd & UART_NO_DATA)) && i != dataLen){
-                        data[i] = cmd;
-                        i++;
-                    }
-                }while(i < dataLen);
-
-                //get stop byte
-                if(cmd != STOP_BYTE){
-                    do{cmd = uart_getc();}while(cmd != STOP_BYTE);
-                }
-                //TODO: later add XOR checksum message validation
-
-                state = STATE_FRAME_REPLY;
-
-                break;
-            case STATE_FRAME_REPLY:
-
-                //Send Response
-                PORTB |= (1 << RS485_RXTX_EN);
-                uart_putc(START_BYTE);
-                uart_putc(SLAVE_ADDRESS);
-                uart_putc(0x08);//Send temp in 8 bytes
-                uart_putc(lastWholeTemp/100+'0');
-                uart_putc(lastWholeTemp/10+'0');
-                uart_putc(lastWholeTemp%10+'0');
-                uart_putc('.');
-                uart_putc(lastDecimalTemp/1000 + '0');
-                uart_putc((lastDecimalTemp/100)%10 + '0');
-                uart_putc((lastDecimalTemp/10)%10+ '0');
-                uart_putc(lastDecimalTemp%10 + '0');
-                uart_putc(STOP_BYTE);
-
-                /*while(!(UCSRA & (1 << TXC))); why u no work????
-                _delay_ms(20);//This is shit
-                //Reenable RX
-                PORTB &= ~(1 << RS485_RXTX_EN);
-
-                PORTB &= ~(1 << STATUS_LED);
-                state = STATE_START;
-                break;
-            default:
-                break;
-        }i*/
-    }
-}
+		/* delay until pulse part of cycle done */
+		DDRB &= ~(1 << PB3);
+		/* disable output pin */
+		}
+	return (0);
+	/* End event loop */
+	/* This line is never reached */
+ }
+ /*static inline uint16_t getNumber16(void) {
+ // Gets a PWM value from the serial port.
+ // Reads in characters, turns them into a number
+ char thousands = '0';
+ char hundreds = '0';
+ char tens = '0';
+ char ones = '0';
+ char thisChar = '0';
+ do {
+ thousands = hundreds;
+ hundreds = tens;
+ tens = ones;
+ ones = thisChar;
+ thisChar = receiveByte();
+ transmitByte(thisChar);
+ } while (thisChar != '\r');
+ /* shift numbers over */
+ /* get a new character */
+ /* echo /
+ transmitByte('\n');
+ /* newline /
+ return (1000 * (thousands - '0') + 100 * (hundreds - '0') +
+ 10 * (tens - '0') + ones - '0');
+ }*/

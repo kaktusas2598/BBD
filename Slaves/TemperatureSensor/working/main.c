@@ -1,21 +1,9 @@
-/*
- * ATMega8 Light Sensor with RS485 interface
- * Created By: Nerijus Vilčinskas
- */
-/*#define F_CPU 14745600UL*/
+#define F_CPU 14745600UL
 
-//RS485 drivers control
-#define RS485_DDR DDRB
-#define RS485_PORT PORTB
-#define RS485_CTRL PB2 //uart0(PC)
+#define RS485_RXTX_EN PB1
+#define STATUS_LED PB2
 
-//Status LED's
-#define LED_DDR DDRB
-#define LED_PORT PORTB
-#define LED1 PB0
-#define LED2 PB1
-
-#define SLAVE_ADDRESS 0x15
+#define SLAVE_ADDRESS 0x14
 
 #define START_BYTE 0x96
 #define STOP_BYTE 0xA9
@@ -31,28 +19,24 @@ typedef enum {
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
+#include "ds18b20.h"
 #include "uart.h"
 
-void initADC(){
-    /*ADMUX |= (1 < REFS0);*/
-    //sdadfasdasd
-}
+volatile uint8_t lastWholeTemp;
+volatile uint16_t lastDecimalTemp;
 
 int main (void){
 
     //Status Led set and turn off
-    LED_DDR |= (1 << DDB2);
-    LED_PORT &= ~(1 << LED1) | (1 << LED2);
+    DDRB |= (1 << DDB2);
+    PORTB &= ~(1 << STATUS_LED);
 
     //RS485 Driver Tx/Rx control pin to output and enable RX
-    DDRB |= (1 << DDB2);
-    PORTB &= ~(1 << RS485_CTRL);
+    DDRB |= (1 << DDB1);
+    PORTB &= ~(1 << RS485_RXTX_EN);
 
     //enable internal UART RX pull-up
     PORTD |= (1 << PD0);
-    /*Test*/
-    DDRD |= (1 << 7);
-	PORTD |= (1 << PD7);
 
     //initialize uart
     uart_init();
@@ -69,31 +53,23 @@ int main (void){
 
     FRAME_STATE state = STATE_START;
 
-	LED_PORT ^= (1 << LED1);
     while(1){
-        LED_PORT ^= (1 << LED1);
-        /*DDRC |= */
-        _delay_ms(200);
-        LED_PORT ^= (1 << LED2);
-
-        continue;
-
-        //Only get ADC data if message have not yet arrived
-        if(state == STATE_START)
-            //TODO: ACD conversion and Get Light Level
-
         switch(state){
             //Start of frame, wait for start byte
             case STATE_START:
                 /*do{cmd = uart_getc();}while(cmd != START_BYTE);*/
-                //Led on mark start of message
-                LED_PORT |= (2 << LED1);
-                state = STATE_FRAME_START;
+                /*state = STATE_FRAME_START;*/
+				cmd = uart_getc();
+				if(cmd == START_BYTE)
+					state = STATE_FRAME_START;
+
                 break;
             //Get slave address
             case STATE_FRAME_START:
                 do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
                 if(cmd == SLAVE_ADDRESS){
+					//Led on mark start of message
+					PORTB |= (1 << STATUS_LED);
                     dataAddress = cmd;
                     state = STATE_FRAME_DATA;
                 }else{
@@ -133,11 +109,12 @@ int main (void){
                 break;
             case STATE_FRAME_REPLY:
 
+				ds18b20_gettemp(&lastWholeTemp, &lastDecimalTemp);
                 //Send Response
-                PORTB |= (1 << RS485_CTRL);
+                PORTB |= (1 << RS485_RXTX_EN);
                 uart_putc(START_BYTE);
                 uart_putc(SLAVE_ADDRESS);
-                /*uart_putc(0x08);//Send temp in 8 bytes
+                uart_putc(0x08);//Send temp in 8 bytes
                 uart_putc(lastWholeTemp/100+'0');
                 uart_putc(lastWholeTemp/10+'0');
                 uart_putc(lastWholeTemp%10+'0');
@@ -145,15 +122,15 @@ int main (void){
                 uart_putc(lastDecimalTemp/1000 + '0');
                 uart_putc((lastDecimalTemp/100)%10 + '0');
                 uart_putc((lastDecimalTemp/10)%10+ '0');
-                uart_putc(lastDecimalTemp%10 + '0');*/
+                uart_putc(lastDecimalTemp%10 + '0');
                 uart_putc(STOP_BYTE);
 
                 /*while(!(UCSRA & (1 << TXC))); why u no work????*/
                 _delay_ms(20);//This is shit
                 //Reenable RX
-                PORTB &= ~(1 << RS485_CTRL);
+                PORTB &= ~(1 << RS485_RXTX_EN);
 
-                LED_PORT &= ~(1 << LED1);
+                PORTB &= ~(1 << STATUS_LED);
                 state = STATE_START;
                 break;
             default:

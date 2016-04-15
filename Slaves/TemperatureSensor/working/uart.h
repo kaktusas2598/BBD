@@ -1,6 +1,13 @@
 #ifndef UART_H
 #define UART_H
 
+//TEMPORALILY!
+//TODO: create constants.h
+//or hell no maybe im high nigga!
+//but this defines belong here!
+#define USART_BAUDRATE 9600
+#define BAUD_PRESCALE (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
+
 #include <stdint.h>
 #include <avr/io.h>
 
@@ -11,6 +18,8 @@
 /*
  * constants and macros
  */
+#define UART_RX_BUFFER_SIZE 16
+#define UART_TX_BUFFER_SIZE 16
 
 /* 
 ** high byte error return code of uart_getc()

@@ -3,13 +3,12 @@
 ##########    Check these every time you start a new project    ##########
 ##########------------------------------------------------------##########
 
-MCU = atmega8
+MCU = attiny2313
 #Dont forget to set fuse bits ;)
 #F_CPU = 1000000UL
 F_CPU = 14745600UL
 #Programmer Baud Rate
 ## Also try BAUD = 19200 or 38400 if you're feeling lucky.
-#BAUD  = 19200 #for arduino ISP
 BAUD  = 115200
 
 ##Default ATtiny2313A fuses
@@ -29,10 +28,9 @@ LIBDIR = ../../AVR-Programming-Library
 ##########        (Can override.  See bottom of file.)          ##########
 ##########------------------------------------------------------##########
 
-#PROGRAMMER_TYPE = avrisp
 PROGRAMMER_TYPE = usbasp
 # extra arguments to avrdude: baud rate, chip type, -F flag, etc.
-PROGRAMMER_ARGS = 	#-P /dev/ttyACM0 #for arduino isp
+PROGRAMMER_ARGS = 	
 
 ##########------------------------------------------------------##########
 ##########                  Program Locations                   ##########
