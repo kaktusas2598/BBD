@@ -3,41 +3,19 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-#include "avr-pcf8563/PCF8563.h"    
-#include "avr-pcf8563/PCF8563.h"    
+#include "avr-pcf8563/PCF8563.h"
+#include "avr-pcf8563/PCF8563.h"
 #include "uart.h"
 
 //TODO:
 //Both uarts
 //i2c ds1307
 
-
-void sendResponse(char * buffer, int len){
-    RS485_PORT |= (1 << RS485_CTRL1);
-    /*_delay_ms(1);*/
-
-    for(uint8_t i = 0; i < len; i++){
-        uart0_putc(buffer[i]);
-        /*_delay_ms(1);*/
-    }
-    /*while(!(UCSR0A & (1 << TXC0)));*/
-    UCSR0B |= (1 << TXCIE0);
-    /*RS485_PORT &= ~(1 << RS485_CTRL1);*/
-
-}
-void sendRequest(char * buffer, int len){
-    RS485_PORT |= (1 << RS485_CTRL2);
-    /*_delay_ms(1);*/
-
-    for(uint8_t i = 0; i < len; i++){
-        uart1_putc(buffer[i]);
-        _delay_ms(1);
-    }
-    UCSR1B |= (1 << TXCIE1);
-    /*while(!(UCSR1A & (1 << TXC1)));*/
-    /*RS485_PORT &= ~(1 << RS485_CTRL2);*/
-
-}
+//TODO: simplify for usb later for june
+//Send RS485 response to pc station
+void masterInit();
+void sendResponse(char * buffer, int len);
+void sendRequest(char * buffer, int len);
 
 ISR(USART0_TX_vect){
     UCSR0B &= ~(1 << TXCIE0);
@@ -50,14 +28,21 @@ ISR(USART1_TX_vect){
 //PCD8563 alarm
 ////TODO: implement queue and sorting by remaining time
 ISR(INT2_vect){
+    /*PCF_SetTimer(PCF_TIMER_DISABLED, 0);*/
+	LED_PORT ^= (1 << LED1);
+    /*PCF_SetTimer(PCF_TIMER_1HZ, 1);//10 ticks and fire int*/
+
 }
 //Use 1HZ output from rtc chip? 
+//1 HZ clkout from RTC to AVR 16bit timer
+//Compare Metch on Minute on more
 ISR(TIMER1_COMPA_vect){
+    PORTD ^= (1 << PD6);
 }
 //Eeprom ready
 //TODO: write and read configs
-ISR(EE_READY_vect){
-}
+/*ISR(EE_READY_vect){*/
+/*}*/
 //is needed I2C int??
 /*ISR(TWI_vect){
 }*/
@@ -65,19 +50,32 @@ ISR(EE_READY_vect){
 
 int main (void){
 
-    //Set LED pins to Output
-    LED_DDR |= (1 << LED1) | (1 << LED2);
-    LED_PORT &= ~(1 << LED1) | (1 << LED2);
-
-    PCF_Init(PCF_ALARM_INTERRUPT_ENABLE);// | PCF_TIMER_INTERRUPT_ENABLE);
+    masterInit();
     
-    //Wont yet work, not soldered
+    //External interrup from RTC (Alarm/Timer)
+    //Look on p68 table for ISCn bits
+    /*EICRA = (1 << ISC20) | (1 < ISC21); // configure for rising edge*/
+	EICRA |= (1 << ISC10);//falling edge
+	/*EIMSK |= (1<<INT2);*/
+
+    PCF_Init(PCF_ALARM_INTERRUPT_ENABLE | PCF_TIMER_INTERRUPT_ENABLE);
+
+    //TODO: set alarms based on actions queue
+    PCF_SetTimer(PCF_TIMER_1HZ, 1);//10 ticks and fire int
+
     PCF_SetClockOut(PCF_CLKOUT_1HZ);//RTC clkout to avr one second clock
 
-    //Set RELAY pins to output
-    RELAY_DDR |= (1 << RELAY1) | (1 << RELAY2);
-    RELAY_PORT &= ~(1 << RELAY1) | (1 << RELAY2);
+    //Init timer 1
+    /*TCCR1A = (1 << COM1A0);*/
 
+    OCR1A = 4;//5 seconds
+
+    TCCR1B |= (1 << WGM12);//p130. Timer1 mode CTC, TOP on OCR1A
+	TIMSK1 |= (1 << OCIE1A); //Timer1 output compare A interrupt enable
+
+    TCCR1B |= (1 << CS12) | (1 << CS11); //Timer source T1, falling edge
+
+    /*rs485Init();*/
     //Set RS485 drivers Mode
     //RS485 Drivers Tx/Rx control pin to output
     RS485_DDR |= (1 << RS485_CTRL1) | (1 << RS485_CTRL2);
@@ -93,7 +91,6 @@ int main (void){
     uart0_init(9600);
     uart1_init(9600);
 
-
     //enable global interrupts
     sei();
 
@@ -105,15 +102,27 @@ int main (void){
     uint8_t dataLen;
     uint8_t data[32];//Maximum defined data lenght
     uint8_t i;
-    unsigned int tempDataByte;
+
+    uint8_t flags;
 
     //TEMP for testing auto lights
     /*state = STATE_SLAVE_SEND;*/
 
     //Main Loop with Finite State Machine for handling protocol frames
     while(1){
+        /*TWI_Write(0xA2);*/
+        /*_delay_ms(100);*/
+        /*LED_PORT ^= (1 << LED1);*/
+
         switch(state){
             case STATE_IDLE:
+                /*flags = PCF_GetAndClearFlags();
+                //Timer countdown end
+                if (flags & PCF_TIMER_FLAG)
+                {
+                    PCF_SetTimer(PCF_TIMER_1HZ, 1);
+                    LED_PORT ^= (1 << LED1);
+                }*/
                 //Wait for start byte of protocol frame
                 cmd = uart0_getc();
                 if(cmd == START_BYTE){
@@ -143,9 +152,9 @@ int main (void){
                 i = 0;
                 do{
                     //Get each data byte
-                    tempDataByte = uart0_getc();
-                    if(!(tempDataByte & UART_NO_DATA) && i != dataLen){
-                        data[i] = tempDataByte;
+                    cmd = uart0_getc();
+                    if(!(cmd & UART_NO_DATA) && i != dataLen){
+                        data[i] = cmd;
                         i++;
                     }
 
@@ -169,9 +178,9 @@ int main (void){
                 i = 0;
                 do{
                     //Get each data byte
-                    tempDataByte = uart0_getc();
-                    if(!(tempDataByte & UART_NO_DATA) && i != dataLen){
-                        data[i] = tempDataByte;
+                    cmd = uart0_getc();
+                    if(!(cmd & UART_NO_DATA) && i != dataLen){
+                        data[i] = cmd;
                         i++;
                     }
 
@@ -221,9 +230,9 @@ int main (void){
                 i = 0;
                 do{
                     //Get each data byte
-                    tempDataByte = uart1_getc();
-                    if(!(tempDataByte & UART_NO_DATA) && i != dataLen){
-                        data[i] = tempDataByte;
+                    cmd = uart1_getc();
+                    if(!(cmd & UART_NO_DATA) && i != dataLen){
+                        data[i] = cmd;
                         i++;
                     }
 
@@ -265,6 +274,17 @@ int main (void){
 
                  PCF_SetDateTime(&dateTime);
                  * */
+                //switch by command type byte
+                /*switch(data[0]){
+                    case CMD_RELAY:
+                        Switch relay based on second byte
+                        break;
+                    case CMD_GET_TIME;
+                        Get time from PCF8563 
+                        PCF_GetDateTime();
+                    default:
+                        break;
+                }*/
 
 
                 //TODO: implement master protocol logic
@@ -281,3 +301,44 @@ int main (void){
 
     }
 }
+void masterInit(){
+    //Set LED pins to Output
+    ////LED1 PB0
+    LED_DDR |= (1 << LED1) ;//| (1 << LED2);
+    LED_PORT &= ~(1 << LED1);// | (1 << LED2);
+    //LED2
+    DDRD |= (1 << PD6);
+
+    //Set RELAY pins to output and turn relays off
+    RELAY_DDR |= (1 << RELAY1) | (1 << RELAY2);
+    RELAY_PORT &= ~(1 << RELAY1) | (1 << RELAY2);
+
+}
+void sendResponse(char * buffer, int len){
+    RS485_PORT |= (1 << RS485_CTRL1);
+    /*_delay_ms(1);*/
+
+    for(uint8_t i = 0; i < len; i++){
+        uart0_putc(buffer[i]);
+        /*_delay_ms(1);*/
+    }
+    /*while(!(UCSR0A & (1 << TXC0)));*/
+    UCSR0B |= (1 << TXCIE0);
+    /*RS485_PORT &= ~(1 << RS485_CTRL1);*/
+
+}
+void sendRequest(char * buffer, int len){
+    RS485_PORT |= (1 << RS485_CTRL2);
+    /*_delay_ms(1);*/
+
+    for(uint8_t i = 0; i < len; i++){
+        uart1_putc(buffer[i]);
+        _delay_ms(1);
+    }
+    UCSR1B |= (1 << TXCIE1);
+    /*while(!(UCSR1A & (1 << TXC1)));*/
+    /*RS485_PORT &= ~(1 << RS485_CTRL2);*/
+
+}
+
+
