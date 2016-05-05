@@ -1,6 +1,8 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+#include <avr/io.h>
+
 //TODO: bunch of defines
 #define F_CPU 14745600UL
 
@@ -36,6 +38,7 @@ typedef enum {
 }DATA_TYPE;
 
 //TODO: add more
+//STATE MACHINE
 typedef enum {
     STATE_IDLE,
     STATE_FETCH_ADDRESS,
@@ -50,15 +53,33 @@ typedef enum {
     STATE_SEND_RESPONSE
 }FRAME_STATE;
 
-//STATE MACHINE
+/*
+ * For putting actions
+ * Alarm/Timer events:
+ * 1. 
+ * Alarm events go to priority queue
+ * Timer events go to 
+ * Triggering events:
+ *
+ **/
+typedef enum {
+    CMD_RELAY = 0x00,
+    CMD_GET_TIME,
+    CMD_RD_CFG,
+    CMD_WR_CFG,
+    CMD_PUT_ACTION
+    //CMD_
+} COMMAND_TYPE;
 
-/*typedef enum {
-    STATE_IDLE,
-    STATE_FETCH_ADDRESS,
-    STATE_FETCH_DATA,
-    STATE_PROCESSING,
-    STATE_SEND_RESPONSE
-}FRAME_STATE;*/
+//typedef enum {
+
+//}
+
+typedef struct {
+    uint8_t id;
+    uint8_t type;
+}sAction ;
+
 
 static volatile FRAME_STATE state;
 
