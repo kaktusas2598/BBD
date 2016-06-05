@@ -5,15 +5,15 @@
 
 MCU = attiny2313
 #Dont forget to set fuse bits ;)
-F_CPU = 1000000UL
-#F_CPU = 14745600UL
+#F_CPU = 1000000UL
+F_CPU = 14745600UL
 #Programmer Baud Rate
 ## Also try BAUD = 19200 or 38400 if you're feeling lucky.
 BAUD  = 115200
 
 ##Default ATtiny2313A fuses
 #Change this fuse for external clock
-LFUSE = 0x64
+LFUSE = 0xff
 HFUSE = 0xdf
 EFUSE = 0xff
 
