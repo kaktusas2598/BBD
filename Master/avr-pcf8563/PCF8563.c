@@ -116,7 +116,8 @@ uint8_t PCF_GetAndClearFlags()
     uint8_t flags;
     PCF_Read(0x01, &flags, 1);              //Control_status_2
 
-    uint8_t cleared = flags & 0b00010011;   //Mask only configuration bits
+    /*uint8_t cleared = flags & 0b00000011;   //Mask only configuration bits*/
+	uint8_t cleared = flags & 0b00010011;   //Mask only configuration bits
     PCF_Write(0x01, &cleared, 1);           //Control_status_2
 
     return flags & 0x0C;                    //Mask unnecessary bits

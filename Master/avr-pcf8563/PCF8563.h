@@ -9,6 +9,7 @@
 #ifndef PCF8563_H_
 #define PCF8563_H_
 
+#define PCF8563_TI_TP (1 << 4)
 
 #define PCF8563_READ_ADDR				0xA3
 #define PCF8563_WRITE_ADDR				0xA2
