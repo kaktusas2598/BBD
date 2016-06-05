@@ -34,7 +34,7 @@ void sendResponse(char * buffer, int len){
     UCSRB |= (1 << TXCIE);
 
 }
-ISR(USART_TXC__vect){
+ISR(USART_TXC_vect){
     UCSRB &= ~(1 << TXCIE);
     PORTB &= ~(1 << RS485_RXTX_EN);
 }
@@ -99,10 +99,6 @@ int main (void){
                 do{cmd = uart_getc();}while(cmd & UART_NO_DATA);
                 dataLen = cmd;
 
-                //allocate data buffer
-                //malloc over 500bytes...
-                /*data = (uint8_t *)malloc(dataLen*sizeof(uint8_t));//Works without this..*/
-                //get data bytes
                 uint8_t i = 0;
                 do{
                     //Get each data byte
@@ -128,20 +124,22 @@ int main (void){
                 //Send Response
                 response[0] = START_BYTE;
                 response[1] = SLAVE_ADDRESS;
-                response[2] = 0x08;
+                response[2] = 0x05;
+                /*response[2] = 0x08;*/
                 response[3] = (lastWholeTemp/100+'0');
                 response[4] = (lastWholeTemp/10+'0');
                 response[5] = (lastWholeTemp%10+'0');
                 response[6] = ('.');
                 response[7] = (lastDecimalTemp/1000 + '0');
-                response[8] = ((lastDecimalTemp/100)%10 + '0');
+                /*response[8] = ((lastDecimalTemp/100)%10 + '0');
                 response[9] = ((lastDecimalTemp/10)%10+ '0');
-                response[10] = (lastDecimalTemp%10 + '0');
-                response[11] = (STOP_BYTE);
+                response[10] = (lastDecimalTemp%10 + '0');*/
+                response[8] = (STOP_BYTE);
 
-                sendResponse(response, 12);
+                /*sendResponse(response, 12);*/
+                sendResponse(response, 9);
 
-                                PORTB &= ~(1 << STATUS_LED);
+                PORTB &= ~(1 << STATUS_LED);
                 state = STATE_IDLE;
                 break;
             default:

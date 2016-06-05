@@ -28,16 +28,17 @@ ISR(USART1_TX_vect){
 //PCD8563 alarm
 ////TODO: implement queue and sorting by remaining time
 ISR(INT2_vect){
-    /*PCF_SetTimer(PCF_TIMER_DISABLED, 0);*/
-	LED_PORT ^= (1 << LED1);
-    /*PCF_SetTimer(PCF_TIMER_1HZ, 1);//10 ticks and fire int*/
+    LED_PORT ^= (1 << LED1);
+    /*LED_PORT |= (1 << LED1);*/
 
 }
-//Use 1HZ output from rtc chip? 
 //1 HZ clkout from RTC to AVR 16bit timer
 //Compare Metch on Minute on more
+//
 ISR(TIMER1_COMPA_vect){
-    PORTD ^= (1 << PD6);
+    //TODO: Execute repeating actions here
+    //Temp disable led
+    /*PORTD ^= (1 << PD6);*/
 }
 //Eeprom ready
 //TODO: write and read configs
@@ -51,14 +52,31 @@ ISR(TIMER1_COMPA_vect){
 int main (void){
 
     masterInit();
-    
-    //External interrup from RTC (Alarm/Timer)
-    //Look on p68 table for ISCn bits
-    /*EICRA = (1 << ISC20) | (1 < ISC21); // configure for rising edge*/
-	EICRA |= (1 << ISC10);//falling edge
-	/*EIMSK |= (1<<INT2);*/
 
-    PCF_Init(PCF_ALARM_INTERRUPT_ENABLE | PCF_TIMER_INTERRUPT_ENABLE);
+    //External interrupt from RTC (Alarm/Timer)
+    //Look on p68 table for ISCn bits
+    EICRA = (1 << ISC20) | (1 < ISC21); // configure for rising edge
+    EIMSK |= (1<<INT2);
+
+    //TODO: disable later TI_TP flag as it is for timer conttinous interrupt, will fuck up alarm!
+    PCF_Init(PCF_ALARM_INTERRUPT_ENABLE | PCF_TIMER_INTERRUPT_ENABLE | PCF8563_TI_TP);
+
+    PCF_DateTime dateTime;
+    dateTime.second = 0;
+    dateTime.minute = 0;
+    dateTime.hour = 7;
+    dateTime.day = 5;
+    dateTime.weekday = 4;
+    dateTime.month = 5;
+    dateTime.year = 2016;
+    /*PCF_SetDateTime(&dateTime);*/
+
+    PCF_Alarm pcfAlarm;
+    pcfAlarm.minute = 0;
+    pcfAlarm.hour = 7;
+    pcfAlarm.day = 6;
+    pcfAlarm.weekday = PCF_DISABLE_ALARM;
+    /*PCF_SetAlarm(&pcfAlarm);*/
 
     //TODO: set alarms based on actions queue
     PCF_SetTimer(PCF_TIMER_1HZ, 1);//10 ticks and fire int
@@ -66,12 +84,11 @@ int main (void){
     PCF_SetClockOut(PCF_CLKOUT_1HZ);//RTC clkout to avr one second clock
 
     //Init timer 1
-    /*TCCR1A = (1 << COM1A0);*/
-
-    OCR1A = 4;//5 seconds
+    //Desired Seconds = OCR1A - 1
+    OCR1A = 299;//Interrupt every 5 minutes
 
     TCCR1B |= (1 << WGM12);//p130. Timer1 mode CTC, TOP on OCR1A
-	TIMSK1 |= (1 << OCIE1A); //Timer1 output compare A interrupt enable
+    TIMSK1 |= (1 << OCIE1A); //Timer1 output compare A interrupt enable
 
     TCCR1B |= (1 << CS12) | (1 << CS11); //Timer source T1, falling edge
 
@@ -103,26 +120,14 @@ int main (void){
     uint8_t data[32];//Maximum defined data lenght
     uint8_t i;
 
-    uint8_t flags;
-
     //TEMP for testing auto lights
     /*state = STATE_SLAVE_SEND;*/
+    state = STATE_IDLE;
 
     //Main Loop with Finite State Machine for handling protocol frames
     while(1){
-        /*TWI_Write(0xA2);*/
-        /*_delay_ms(100);*/
-        /*LED_PORT ^= (1 << LED1);*/
-
         switch(state){
             case STATE_IDLE:
-                /*flags = PCF_GetAndClearFlags();
-                //Timer countdown end
-                if (flags & PCF_TIMER_FLAG)
-                {
-                    PCF_SetTimer(PCF_TIMER_1HZ, 1);
-                    LED_PORT ^= (1 << LED1);
-                }*/
                 //Wait for start byte of protocol frame
                 cmd = uart0_getc();
                 if(cmd == START_BYTE){
@@ -135,7 +140,6 @@ int main (void){
                 //Message for master from PC
                 if(cmd == SLAVE_ADDRESS){
                     state = STATE_MASTER_FRAME;
-                    LED_PORT |= (1 << LED1);
                 //Or message for slaves
                 }else{
                     state = STATE_SLAVE_FRAME;
@@ -192,17 +196,8 @@ int main (void){
 
                 state = STATE_SLAVE_SEND;
                 break;
-            //Send Request to slave
+            //Forward Request to slave
             case STATE_SLAVE_SEND:
-
-                //TEST: send message to LDR;
-                /*response[0] = START_BYTE;
-                response[1] = 0x15;
-                response[2] = 0x01;
-                response[3] = 0x00;
-                response[4] = STOP_BYTE;
-
-                sendRequest(response, 5);*/
                 response[0] = START_BYTE;
                 response[1] = dataAddress;
                 response[2] = dataLen;
@@ -216,9 +211,7 @@ int main (void){
                 break;
             //Receive response from slave
             case STATE_SLAVE_RECEIVE:
-                //BUG: After second frame send, stuck here
                 //Start byte
-                LED_PORT |= (1 << LED2);
                 do{cmd = uart1_getc();}while(cmd != START_BYTE);
                 //Address
                 do{cmd = uart1_getc();}while(cmd & UART_NO_DATA);
@@ -226,7 +219,6 @@ int main (void){
                 do{cmd = uart1_getc();}while(cmd & UART_NO_DATA);
                 dataLen = cmd;
 
-                LED_PORT &= ~(1 << LED2);
                 i = 0;
                 do{
                     //Get each data byte
@@ -264,16 +256,8 @@ int main (void){
             case STATE_MASTER_COMMAND:
 
                 /*
-                 *PCF_DateTime dateTime;
-                 dateTime.second = 43;
-                 dateTime.minute = 59;
-                 dateTime.day = 15;
-                 dateTime.weekday = 6;
-                 dateTime.month = 8;
-                 dateTime.year = 2015;
-
-                 PCF_SetDateTime(&dateTime);
-                 * */
+                 PCF_DateTime dateTime;
+                 */
                 //switch by command type byte
                 /*switch(data[0]){
                     case CMD_RELAY:
